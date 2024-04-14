@@ -60,23 +60,26 @@ class FaceLandmarkDataset(Dataset):
 class LandmarkLSTM(nn.Module):  
     def __init__(self, input_shape, output_shape):
         super().__init__()
-        self.lstm = nn.LSTM(input_shape, 128, batch_first=True)
+        self.lstm = nn.LSTM(input_shape, 4, batch_first=True)
 
         self.dense = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(161920, 1024),
+            nn.Linear(5060, 1024),
             nn.BatchNorm1d(1024),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(1024, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(),
             nn.Linear(512, 128),
             nn.BatchNorm1d(128),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(128, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.Linear(64, 16),
+            nn.Dropout(0.5),
             nn.BatchNorm1d(16),
             nn.ReLU(),
             nn.Linear(16, 2),
@@ -97,11 +100,11 @@ class LandmarkLSTM(nn.Module):
 
 dataset = FaceLandmarkDataset("bol")
 
-train_set, val_set = torch.utils.data.random_split(dataset, [int(0.7*len(dataset)), len(dataset) - int(0.7*len(dataset))])
+train_set, val_set = torch.utils.data.random_split(dataset, [int(0.8*len(dataset)), len(dataset) - int(0.8*len(dataset))])
 print(f"Training set size: {len(train_set)}")
 print(f"Validation set size: {len(val_set)}")
 train_dataloader = DataLoader(train_set, batch_size=32, shuffle=True)
-test_dataloader = DataLoader(val_set, batch_size=32, shuffle=True)
+test_dataloader = DataLoader(val_set, batch_size=16, shuffle=True)
 
 img_batch, label_batch = next(iter(test_dataloader))
 img_single, label_single = img_batch[0].to(device), label_batch[0]
@@ -180,7 +183,7 @@ def test_step(model: torch.nn.Module,
             loss = loss_fn(test_pred_logits, y)
             test_loss += loss.item()
             
-            # Calculate and accumulate accuracy
+            # Calculate and accumulate accuracy        
             test_pred_labels = test_pred_logits.argmax(dim=1)
             test_acc += ((test_pred_labels == y).sum().item()/len(test_pred_labels))
             
