@@ -8,14 +8,18 @@ import pandas as pd
 from torchinfo import summary 
 from timeit import default_timer as timer 
 import matplotlib.pyplot as plt 
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from utils import *
 import warnings 
+import random
+import numpy as np 
 warnings.filterwarnings("ignore")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using", device)
 
-                               
+cats = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
+le = OneHotEncoder(sparse_output=False)
+le.fit(np.array(cats).reshape(-1, 1))                     
 class ExpressionDataset(Dataset):
     
     def __init__(self, paths, transform=None):
@@ -29,9 +33,8 @@ class ExpressionDataset(Dataset):
 
     def load_expressions(self, file_path):
         df = pd.read_csv(file_path)
-        le = LabelEncoder()
-        df = le.fit_transform(df)
-        df = torch.tensor(df).unsqueeze(1)
+        df = le.transform(df)
+
         return torch.tensor(df)
     
     def get_ground_truth(self, file_path):
@@ -59,18 +62,16 @@ class LandmarkLSTM(nn.Module):
         self.dense = nn.Sequential(
             nn.Linear(hidden_shape, 128),
             nn.ReLU(),
-            nn.BatchNorm1d(128),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.BatchNorm1d(64),
-            nn.Linear(64, output_shape),
-            nn.Softmax(dim=1)
-        )
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, output_shape) 
+                          )
 
     def forward(self, x: torch.Tensor):
         out, _ = self.lstm(x)
         out = self.dense(out[:, -1])
-        print(out.shape)
         return out
     
 def collate_pad(batch):
@@ -80,6 +81,7 @@ def collate_pad(batch):
     return X, torch.tensor(y)
 
 paths = glob.glob("BagOfLies/Finalised/User_*/")
+random.shuffle(paths)
 train_paths, test_paths = torch.utils.data.random_split(paths, [int(0.8*len(paths)), len(paths) - int(0.8*len(paths))])
 
 train_dataset = ExpressionDataset(train_paths)
@@ -87,16 +89,20 @@ test_dataset = ExpressionDataset(test_paths)
 
 print(f"Training set size: {len(train_dataset)}")
 print(f"Validation set size: {len(test_dataset)}")
-train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=collate_pad)
-test_dataloader = DataLoader(test_dataset, batch_size=16, shuffle=True, collate_fn=collate_pad)
+train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True, collate_fn=collate_pad)
+test_dataloader = DataLoader(test_dataset, batch_size=64, shuffle=True, collate_fn=collate_pad)
 
 X_batch, y_batch = next(iter(train_dataloader))
 X_single, y_single = X_batch[0], y_batch[0]
 X_single = X_single.unsqueeze(0)
+
+print("Sample Instance:")
+print(X_single)
 print(f"X_batch shape: {X_batch.shape}")
 print(f"y_batch shape: {y_batch.shape}")
 
-model = LandmarkLSTM(1, 64, 2).to(device)
+model = LandmarkLSTM(7, 256, 2).to(device)
+# model = nn.DataParallel(model)
 
 model.eval()
 
@@ -105,7 +111,7 @@ with torch.inference_mode():
     print(f"Testing model with input shape {X_single.shape}...")
     print(output)
 
-    summary(model, input_size=(X_single.shape), device=device)
+summary(model, input_size=(X_single.shape), device=device)
 
 
 NUM_EPOCHS = 50
